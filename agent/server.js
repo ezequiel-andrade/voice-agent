@@ -107,8 +107,18 @@ wss.on('connection', (clientWs, req) => {
 
   log.info('session', 'Nova conexão', { speaker, lang, model: llmModel });
 
+  // // ── Histórico LLM ─────────────────────────────────────────────────────────
+  // const messages = [{ role: 'system', content: 'Você é um assistente de voz prestativo e conciso. Responda de forma natural e breve.' }];
+
   // ── Histórico LLM ─────────────────────────────────────────────────────────
-  const messages = [{ role: 'system', content: 'Você é um assistente de voz prestativo e conciso. Responda de forma natural e breve.' }];
+  const SYSTEM_PROMPTS = {
+    por: 'Você é um assistente de voz prestativo e conciso. Responda de forma natural e breve.',
+    eng: 'You are a helpful and concise voice assistant. Respond naturally and briefly.',
+    spa: 'Eres un asistente de voz útil y conciso. Responde de forma natural y breve.',
+    fra: 'Tu es un assistant vocal utile et concis. Réponds naturellement et brièvement.',
+    ger: 'Du bist ein hilfreicher und präziser Sprachassistent. Antworte natürlich und kurz.',
+  };
+  const messages = [{ role: 'system', content: SYSTEM_PROMPTS[lang] || SYSTEM_PROMPTS['eng'] }];
 
   // ── Rate Limiter ──────────────────────────────────────────────────────────
   let requestsThisMinute = 0;
