@@ -1,0 +1,13 @@
+{
+  "name": "voice-agent-sip",
+  "version": "1.0.0",
+  "main": "sip-server.js",
+  "scripts": {
+    "start": "node sip-server.js"
+  },
+  "dependencies": {
+    "drachtio-srf": "^5.0.0",
+    "dotenv": "^16.4.0",
+    "ws": "^8.18.0"
+  }
+}

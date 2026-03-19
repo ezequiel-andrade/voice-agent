@@ -1,0 +1,61 @@
+services:
+
+  drachtio:
+    image: drachtio/drachtio-server:latest
+    container_name: drachtio
+    restart: unless-stopped
+    network_mode: host
+    command: drachtio --contact "sip:*;transport=udp,tcp" --loglevel info --sofia-loglevel 3 --secret CaminhoDrachtio2024
+    volumes:
+      - drachtio_logs:/var/log/drachtio
+
+  agent:
+    build:
+      context: ./agent
+      dockerfile: Dockerfile
+    container_name: voice-agent
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - DEEPGRAM_KEY=${DEEPGRAM_KEY}
+      - INCEPTION_KEY=${INCEPTION_KEY}
+      - RIME_KEY=${RIME_KEY}
+      - PORT=3000
+      - RATE_LIMIT=${RATE_LIMIT:-20}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    depends_on:
+      - drachtio
+
+  sip:
+    build:
+      context: ./sip
+      dockerfile: Dockerfile
+    container_name: sip-bridge
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - DRACHTIO_HOST=localhost
+      - DRACHTIO_PORT=9022
+      - DRACHTIO_SECRET=CaminhoDrachtio2024
+      - AGENT_WS_URL=ws://localhost:3000/agent
+      - AGENT_SPEAKER=${AGENT_SPEAKER:-astra}
+      - AGENT_LANG=${AGENT_LANG:-por}
+      - AGENT_MODEL=${AGENT_MODEL:-arcana}
+      - HTTP_PORT=3001
+      - RTP_HOST=${HOST_IP}
+      - RTP_PORT_MIN=20000
+      - RTP_PORT_MAX=20100
+    depends_on:
+      agent:
+        condition: service_healthy
+      drachtio:
+        condition: service_started
+
+volumes:
+  drachtio_logs:

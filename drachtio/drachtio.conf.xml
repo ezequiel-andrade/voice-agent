@@ -1,0 +1,24 @@
+<drachtio>
+  <admin port="9022" secret="CaminhoDrachtio2024"/>
+  <request-handler>
+    <sip-dialog-controller>
+      <max-dialogs>5000</max-dialogs>
+    </sip-dialog-controller>
+  </request-handler>
+  <sip>
+    <contacts>
+      <contact>
+        <uri>sip:*;transport=udp,tcp</uri>
+        <external-ip>auto-detect</external-ip>
+      </contact>
+    </contacts>
+    <udp-mtu>4096</udp-mtu>
+  </sip>
+  <logging>
+    <console>
+      <loglevel>info</loglevel>
+    </console>
+    <loglevel>info</loglevel>
+    <sofia-loglevel>3</sofia-loglevel>
+  </logging>
+</drachtio>

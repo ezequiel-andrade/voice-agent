@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Voice Agent</title>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=IBM+Plex+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:      #080c10;
+  --surface: #0d1117;
+  --border:  #1a2030;
+  --border2: #243040;
+  --accent:  #00d4ff;
+  --accent2: #00ff9d;
+  --warn:    #ff6b35;
+  --red:     #f43f5e;
+  --text:    #c9d6e3;
+  --muted:   #445566;
+  --font-serif: 'Instrument Serif', serif;
+  --font-mono:  'IBM Plex Mono', monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  background: var(--bg); color: var(--text);
+  font-family: var(--font-mono);
+  display: grid; grid-template-rows: auto 1fr auto;
+  height: 100vh; overflow: hidden;
+}
+body::after {
+  content: ''; position: fixed; inset: 0;
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,212,255,0.01) 2px, rgba(0,212,255,0.01) 4px);
+  pointer-events: none; z-index: 100;
+}
+
+/* ── Header ── */
+header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 24px; border-bottom: 1px solid var(--border);
+  background: rgba(8,12,16,0.97); backdrop-filter: blur(10px);
+  position: relative; z-index: 10;
+}
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand-orb {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: conic-gradient(var(--accent), var(--accent2), var(--accent));
+  animation: spin 8s linear infinite; flex-shrink: 0;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.brand-name { font-family: var(--font-serif); font-size: 18px; color: #fff; }
+.brand-name span { color: var(--accent); font-style: italic; }
+
+.header-center {
+  display: flex; align-items: center; gap: 8px;
+}
+/* Latency pills */
+.latency-row { display: flex; gap: 6px; }
+.lat-pill {
+  font-size: 10px; padding: 3px 8px; border-radius: 2px;
+  border: 1px solid var(--border2); color: var(--muted);
+  letter-spacing: 0.05em;
+}
+.lat-pill span { color: var(--accent2); }
+
+.header-right { display: flex; align-items: center; gap: 12px; }
+.config-row { display: flex; gap: 6px; }
+select.mini {
+  background: var(--surface); border: 1px solid var(--border2);
+  color: var(--text); font-family: var(--font-mono); font-size: 11px;
+  padding: 4px 8px; border-radius: 3px; outline: none; cursor: pointer;
+}
+.status-pill {
+  display: flex; align-items: center; gap: 7px; font-size: 11px;
+  letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted);
+  padding: 4px 12px; border: 1px solid var(--border2); border-radius: 20px;
+}
+.sdot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--muted); transition: background 0.3s;
+}
+.sdot.listening { background: var(--accent);  animation: breathe 1.2s ease-in-out infinite; }
+.sdot.thinking  { background: var(--accent2); animation: breathe 0.6s ease-in-out infinite; }
+.sdot.speaking  { background: var(--warn);    animation: breathe 0.8s ease-in-out infinite; }
+.sdot.connected { background: var(--accent2); }
+.sdot.error     { background: var(--red); }
+@keyframes breathe { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.4;transform:scale(0.7)} }
+
+/* ── Main ── */
+main { display: grid; grid-template-columns: 1fr 300px; overflow: hidden; min-height: 0; }
+
+/* ── Chat ── */
+.chat-area { display: flex; flex-direction: column; border-right: 1px solid var(--border); overflow: hidden; }
+.messages {
+  flex: 1; overflow-y: auto; padding: 20px 24px;
+  display: flex; flex-direction: column; gap: 18px; scroll-behavior: smooth;
+}
+.messages::-webkit-scrollbar { width: 3px; }
+.messages::-webkit-scrollbar-thumb { background: var(--border2); }
+
+.msg { display: flex; flex-direction: column; gap: 5px; max-width: 88%; animation: msgIn 0.2s ease forwards; }
+@keyframes msgIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+.msg.user  { align-self: flex-end; }
+.msg.agent { align-self: flex-start; }
+.msg-meta { font-size: 10px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.msg.user .msg-meta { justify-content: flex-end; }
+.msg-time { opacity: 0.6; }
+.msg-bubble {
+  padding: 11px 15px; border-radius: 4px;
+  font-size: 13px; line-height: 1.65;
+}
+.msg.user  .msg-bubble { background: #0a1a2a; border: 1px solid var(--border2); border-top-right-radius: 1px; }
+.msg.agent .msg-bubble { background: #0d1f18; border: 1px solid rgba(0,255,157,0.1); border-top-left-radius: 1px; }
+.cursor::after { content: '▋'; color: var(--accent2); animation: blink 0.7s step-end infinite; }
+@keyframes blink { 50%{opacity:0} }
+
+.interim-bar {
+  padding: 7px 24px; font-size: 12px; color: var(--muted); font-style: italic;
+  border-top: 1px solid var(--border); min-height: 32px;
+  background: rgba(0,212,255,0.015); transition: color 0.2s;
+}
+.interim-bar.active { color: var(--accent); }
+
+/* ── Right panel ── */
+.right-panel { display: flex; flex-direction: column; background: var(--surface); overflow: hidden; }
+
+/* VAD Visual */
+.vad-section { padding: 16px 18px; border-bottom: 1px solid var(--border); }
+.section-label {
+  font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 10px;
+  display: flex; align-items: center; gap: 8px;
+}
+.section-label::after { content:''; flex:1; height:1px; background:var(--border); }
+
+/* VAD bars — indicador de volume do microfone */
+.vad-bars {
+  display: flex; align-items: center; justify-content: center;
+  gap: 3px; height: 48px; padding: 4px 0;
+}
+.vad-bar {
+  width: 4px; border-radius: 2px;
+  background: var(--border2);
+  transition: height 0.08s ease, background 0.2s;
+  min-height: 4px;
+}
+
+/* Waveform */
+.wave-section { padding: 14px 18px; border-bottom: 1px solid var(--border); }
+#waveCanvas { width:100%; height:48px; display:block; border:1px solid var(--border); border-radius:3px; background:var(--bg); }
+
+/* Words */
+.words-section { padding: 14px 18px; border-bottom: 1px solid var(--border); flex-shrink:0; }
+.words-wrap { display:flex; flex-wrap:wrap; gap:4px; min-height:28px; }
+.word-chip {
+  background: rgba(0,212,255,0.06); border: 1px solid rgba(0,212,255,0.15);
+  color: var(--accent); padding: 2px 7px; border-radius: 2px;
+  font-size: 11px; opacity:0; animation: chipIn 0.15s forwards;
+}
+@keyframes chipIn { to{opacity:1} }
+.words-placeholder { color:var(--muted); font-size:11px; line-height:28px; }
+
+/* Metrics */
+.metrics-section { padding: 14px 18px; border-bottom: 1px solid var(--border); flex-shrink:0; }
+.metric-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+.metric-cell { background:var(--bg); border:1px solid var(--border); border-radius:3px; padding:8px 10px; }
+.metric-cell .mlabel { font-size:9px; letter-spacing:0.12em; text-transform:uppercase; color:var(--muted); margin-bottom:3px; }
+.metric-cell .mval   { font-size:14px; color:var(--accent2); font-weight:500; }
+
+/* Log */
+.log-section { flex:1; overflow:hidden; display:flex; flex-direction:column; padding:14px 18px; }
+.log-inner { flex:1; overflow-y:auto; font-size:10px; line-height:1.8; color:var(--muted); }
+.log-inner::-webkit-scrollbar { width:2px; }
+.log-inner::-webkit-scrollbar-thumb { background:var(--border); }
+.log-entry { display:flex; gap:7px; }
+.log-t { color:rgba(0,212,255,0.3); flex-shrink:0; }
+.ok   { color:var(--accent2); } .err { color:var(--red); }
+.info { color:var(--text); }    .warn{ color:#f0c040; }
+
+/* ── Footer ── */
+footer {
+  display:flex; align-items:center; gap:10px; padding:14px 24px;
+  border-top:1px solid var(--border); background:rgba(8,12,16,0.98);
+}
+#textInput {
+  flex:1; background:var(--surface); border:1px solid var(--border2);
+  color:var(--text); font-family:var(--font-mono); font-size:13px;
+  padding:10px 15px; border-radius:4px; outline:none; transition:border-color 0.2s;
+}
+#textInput:focus { border-color:var(--accent); box-shadow:0 0 0 2px rgba(0,212,255,0.07); }
+#textInput::placeholder { color:var(--muted); }
+
+.btn {
+  font-family:var(--font-mono); font-size:12px; font-weight:500;
+  letter-spacing:0.08em; text-transform:uppercase; padding:10px 18px;
+  border:none; border-radius:4px; cursor:pointer; transition:all 0.15s;
+  display:flex; align-items:center; gap:6px; white-space:nowrap;
+}
+#btnMic {
+  background:var(--accent); color:var(--bg);
+  min-width:48px; justify-content:center; font-size:15px; padding:10px 14px;
+}
+#btnMic:hover   { background:#33ddff; }
+#btnMic.active  { background:var(--warn); animation:micPulse 1s ease-in-out infinite; }
+#btnMic.barge   { background:var(--red); }
+@keyframes micPulse { 0%,100%{box-shadow:0 0 0 0 rgba(255,107,53,0.4)} 50%{box-shadow:0 0 0 8px rgba(255,107,53,0)} }
+#btnMic:disabled { opacity:0.3; cursor:not-allowed; animation:none; }
+#btnSend { background:transparent; color:var(--accent2); border:1px solid rgba(0,255,157,0.25); padding:10px 16px; }
+#btnSend:hover:not(:disabled) { background:rgba(0,255,157,0.05); }
+#btnSend:disabled { opacity:0.3; cursor:not-allowed; }
+
+.empty-state {
+  flex:1; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:10px; color:var(--muted);
+}
+.empty-state .icon { font-size:44px; opacity:0.25; }
+.empty-state p { font-size:12px; text-align:center; line-height:1.6; max-width:260px; }
+</style>
+<!-- VAD Web (Silero ONNX) — servido localmente -->
+<script src="/ort.wasm.min.js"></script>
+<script src="/bundle.min.js"></script>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="brand-orb"></div>
+    <div class="brand-name">Voice<span>Agent</span></div>
+  </div>
+  <div class="header-center">
+    <div class="latency-row">
+      <div class="lat-pill">STT <span id="latStt">—</span></div>
+      <div class="lat-pill">LLM <span id="latLlm">—</span></div>
+      <div class="lat-pill">TTS <span id="latTts">—</span></div>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="config-row">
+      <select class="mini" id="cfgSpeaker">
+        <option value="astra">astra</option>
+        <option value="eva">eva</option>
+        <option value="luna">luna</option>
+        <option value="jake">jake</option>
+      </select>
+      <select class="mini" id="cfgLang">
+        <option value="por">PT</option>
+        <option value="eng">EN</option>
+        <option value="spa">ES</option>
+      </select>
+      <select class="mini" id="cfgModel">
+        <option value="arcana">arcana</option>
+        <option value="mistv2">mistv2</option>
+      </select>
+    </div>
+    <div class="status-pill">
+      <div class="sdot" id="sdot"></div>
+      <span id="statusText">Desconectado</span>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="chat-area">
+    <div class="messages" id="messages">
+      <div class="empty-state" id="emptyState">
+        <div class="icon">🎙</div>
+        <p>Pressione o microfone para começar<br>ou digite uma mensagem.</p>
+      </div>
+    </div>
+    <div class="interim-bar" id="interimBar">—</div>
+  </div>
+
+  <div class="right-panel">
+    <!-- Silero VAD -->
+    <div class="vad-section">
+      <div class="section-label">Silero VAD <span id="vadVersion" style="color:var(--accent2);font-size:9px;margin-left:4px">carregando...</span></div>
+      <!-- Barra de probabilidade de voz -->
+      <div style="margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-bottom:4px">
+          <span>Prob. de voz</span><span id="vadProbText">0%</span>
+        </div>
+        <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+          <div id="vadProbBar" style="height:100%;width:0%;background:var(--accent2);border-radius:3px;transition:width 0.08s ease"></div>
+        </div>
+      </div>
+      <!-- Barras de volume (RMS) -->
+      <div class="vad-bars" id="vadBars"></div>
+      <!-- Estado VAD -->
+      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+        <div id="vadState" style="font-size:10px;padding:3px 8px;border-radius:2px;border:1px solid var(--border2);color:var(--muted)">aguardando</div>
+        <div id="vadFrames" style="font-size:10px;padding:3px 8px;border-radius:2px;border:1px solid var(--border2);color:var(--muted)">0 frames</div>
+      </div>
+    </div>
+
+    <!-- Waveform playback -->
+    <div class="wave-section">
+      <div class="section-label">Áudio</div>
+      <canvas id="waveCanvas"></canvas>
+    </div>
+
+    <!-- Word timestamps -->
+    <div class="words-section">
+      <div class="section-label">Timestamps</div>
+      <div class="words-wrap" id="wordsWrap">
+        <span class="words-placeholder">aguardando...</span>
+      </div>
+    </div>
+
+    <!-- Metrics -->
+    <div class="metrics-section">
+      <div class="section-label">Métricas</div>
+      <div class="metric-grid">
+        <div class="metric-cell"><div class="mlabel">Msgs/min</div><div class="mval" id="mRpm">0</div></div>
+        <div class="metric-cell"><div class="mlabel">Sessão</div><div class="mval" id="mSession">0s</div></div>
+        <div class="metric-cell"><div class="mlabel">Trocas</div><div class="mval" id="mTurns">0</div></div>
+        <div class="metric-cell"><div class="mlabel">Reconects</div><div class="mval" id="mReconnects">0</div></div>
+      </div>
+    </div>
+
+    <!-- Log -->
+    <div class="log-section">
+      <div class="section-label">Log</div>
+      <div class="log-inner" id="logEl"></div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <input type="text" id="textInput" placeholder="Digite uma mensagem..." autocomplete="off">
+  <button class="btn" id="btnSend" onclick="sendText()" disabled>Enviar</button>
+  <button class="btn" id="btnMic"  onclick="toggleMic()" disabled title="Microfone (clique para falar, clique novamente para interromper)">🎤</button>
+</footer>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════════
+// Estado
+// ═══════════════════════════════════════════════════════════════════════════════
+let ws            = null;
+let micCtx        = null;
+let playCtx       = null;
+let analyser      = null;
+let gainNode      = null;
+let micStream     = null;
+let micProcessor  = null;
+let isListening   = false;
+let isSpeaking    = false;
+let mp3Buffer     = new Uint8Array(0);
+let nextPlayTime  = 0;
+let agentMsgEl    = null;
+const MIN_DECODE  = 24 * 1024;
+
+// Metrics
+let sessionStart    = Date.now();
+let turnCount       = 0;
+let reconnectCount  = 0;
+let reqThisMin      = 0;
+let sttStart        = null;
+let llmStart        = null;
+let ttsStart        = null;
+setInterval(() => { reqThisMin = 0; }, 60_000);
+
+// Histórico persistente
+const HISTORY_KEY = 'voice_agent_history';
+let chatHistory = [];
+
+// Reconnect backoff
+let reconnectAttempt = 0;
+const MAX_RECONNECT  = 8;
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// UI Helpers
+// ═══════════════════════════════════════════════════════════════════════════════
+function log(msg, type = 'info') {
+  const el = document.getElementById('logEl');
+  const t  = new Date().toLocaleTimeString('pt-BR', { hour12: false });
+  const d  = document.createElement('div');
+  d.className = 'log-entry';
+  d.innerHTML = `<span class="log-t">${t}</span><span class="${type}">${msg}</span>`;
+  el.appendChild(d);
+  el.scrollTop = el.scrollHeight;
+}
+
+function setStatus(state, text) {
+  document.getElementById('sdot').className = `sdot ${state}`;
+  document.getElementById('statusText').textContent = text;
+}
+
+function updateMetrics() {
+  const elapsed = Math.floor((Date.now() - sessionStart) / 1000);
+  document.getElementById('mSession').textContent  = elapsed > 60 ? `${Math.floor(elapsed/60)}m${elapsed%60}s` : `${elapsed}s`;
+  document.getElementById('mTurns').textContent     = turnCount;
+  document.getElementById('mReconnects').textContent= reconnectCount;
+  document.getElementById('mRpm').textContent       = reqThisMin;
+}
+setInterval(updateMetrics, 1000);
+
+function setLatency(stage, ms) {
+  const map = { stt: 'latStt', llm: 'latLlm', tts: 'latTts' };
+  if (map[stage]) document.getElementById(map[stage]).textContent = `${ms}ms`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Histórico persistente
+// ═══════════════════════════════════════════════════════════════════════════════
+function saveHistory() {
+  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(chatHistory.slice(-100))); } catch {}
+}
+
+function loadHistory() {
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    if (!raw) return;
+    chatHistory = JSON.parse(raw);
+    chatHistory.forEach(m => renderMessage(m.role, m.text, m.time, false));
+    if (chatHistory.length) log(`${chatHistory.length} mensagens restauradas`, 'info');
+  } catch {}
+}
+
+function addToHistory(role, text) {
+  chatHistory.push({ role, text, time: new Date().toLocaleTimeString('pt-BR', { hour12: false }) });
+  saveHistory();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Chat UI
+// ═══════════════════════════════════════════════════════════════════════════════
+function renderMessage(role, text, time, animate = true) {
+  const empty = document.getElementById('emptyState');
+  if (empty) empty.remove();
+
+  const wrap = document.getElementById('messages');
+  const div  = document.createElement('div');
+  div.className = `msg ${role}${animate ? '' : ''}`;
+  if (!animate) div.style.animation = 'none';
+  const t = time || new Date().toLocaleTimeString('pt-BR', { hour12: false });
+  div.innerHTML = `
+    <div class="msg-meta">
+      <span>${role === 'user' ? 'Você' : 'Agente'}</span>
+      <span class="msg-time">${t}</span>
+    </div>
+    <div class="msg-bubble">${text}</div>
+  `;
+  wrap.appendChild(div);
+  wrap.scrollTop = wrap.scrollHeight;
+  return div;
+}
+
+function addMessage(role, text = '', streaming = false) {
+  const div = renderMessage(role, text);
+  if (streaming) div.querySelector('.msg-bubble').classList.add('cursor');
+  return div;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// WebSocket com reconnect exponencial
+// ═══════════════════════════════════════════════════════════════════════════════
+function connect() {
+  const speaker = document.getElementById('cfgSpeaker').value;
+  const lang    = document.getElementById('cfgLang').value;
+  const model   = document.getElementById('cfgModel').value;
+  const url     = `ws://localhost:3000/agent?speaker=${speaker}&lang=${lang}&model=${model}`;
+
+  setStatus('', 'Conectando...');
+  log('Conectando ao servidor...', 'info');
+
+  ws = new WebSocket(url);
+  ws.binaryType = 'arraybuffer';
+
+  ws.onopen = () => {
+    reconnectAttempt = 0;
+    setStatus('connected', 'Conectado');
+    log('Conectado', 'ok');
+    document.getElementById('btnMic').disabled  = false;
+    document.getElementById('btnSend').disabled = false;
+  };
+
+  ws.onmessage = async (e) => await handleMsg(JSON.parse(e.data));
+
+  ws.onerror = () => log('Erro de conexão', 'err');
+
+  ws.onclose = () => {
+    setStatus('error', 'Desconectado');
+    document.getElementById('btnMic').disabled  = true;
+    document.getElementById('btnSend').disabled = true;
+
+    if (reconnectAttempt >= MAX_RECONNECT) {
+      log('Máximo de reconexões atingido', 'err');
+      return;
+    }
+    const delay = Math.min(500 * Math.pow(2, reconnectAttempt), 15_000);
+    reconnectAttempt++;
+    reconnectCount++;
+    log(`Reconectando em ${(delay/1000).toFixed(1)}s (tentativa ${reconnectAttempt})`, 'warn');
+    setTimeout(connect, delay);
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Handler de mensagens do servidor
+// ═══════════════════════════════════════════════════════════════════════════════
+async function handleMsg(msg) {
+  switch (msg.type) {
+
+    case 'stt_ready':
+      log('STT pronto', 'ok');
+      sttStart = Date.now();
+      break;
+
+    case 'transcript':
+      document.getElementById('interimBar').textContent = msg.text || '—';
+      document.getElementById('interimBar').classList.toggle('active', !msg.isFinal);
+      if (msg.speechFinal && msg.text) {
+        if (sttStart) { setLatency('stt', Date.now() - sttStart); sttStart = null; }
+        document.getElementById('interimBar').textContent = '—';
+        addMessage('user', msg.text);
+        addToHistory('user', msg.text);
+        reqThisMin++;
+      }
+      break;
+
+    case 'speech_started':
+      setStatus('listening', 'Ouvindo...');
+      sttStart = Date.now();
+      break;
+
+    case 'speech_ended':
+      setStatus('connected', 'Processando...');
+      break;
+
+    case 'barge_in_ack':
+      log('Barge-in confirmado — agente interrompido', 'warn');
+      isSpeaking = false;
+      mp3Buffer  = new Uint8Array(0); // descarta áudio pendente
+      if (agentMsgEl) {
+        agentMsgEl.querySelector('.msg-bubble').classList.remove('cursor');
+        const bubble = agentMsgEl.querySelector('.msg-bubble');
+        if (!bubble.textContent.trim()) agentMsgEl.remove(); // remove bolha vazia
+      }
+      agentMsgEl = null;
+      setStatus('listening', 'Ouvindo...');
+      updateMicButton();
+      break;
+
+    case 'llm_start':
+      llmStart = Date.now();
+      ttsStart = null;
+      setStatus('thinking', 'Pensando...');
+      agentMsgEl = addMessage('agent', '', true);
+      mp3Buffer  = new Uint8Array(0);
+      nextPlayTime = playCtx ? playCtx.currentTime : 0;
+      turnCount++;
+      break;
+
+    case 'llm_token':
+      if (agentMsgEl) {
+        agentMsgEl.querySelector('.msg-bubble').textContent += msg.token;
+        document.getElementById('messages').scrollTop = 999999;
+      }
+      if (llmStart) { setLatency('llm', Date.now() - llmStart); llmStart = null; }
+      break;
+
+    case 'llm_done':
+      isSpeaking = true;
+      setStatus('speaking', 'Falando...');
+      if (agentMsgEl) {
+        agentMsgEl.querySelector('.msg-bubble').classList.remove('cursor');
+        addToHistory('agent', msg.fullText);
+      }
+      ttsStart = Date.now();
+      updateMicButton();
+      break;
+
+    case 'audio_chunk':
+      initPlayCtx();
+      if (playCtx.state === 'suspended') await playCtx.resume();
+      {
+        const bin = atob(msg.data);
+        const arr = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+        appendAudio(arr);
+        await flushAudio();
+      }
+      if (ttsStart) { setLatency('tts', Date.now() - ttsStart); ttsStart = null; }
+      break;
+
+    case 'audio_done':
+      await flushAudio(true);
+      break;
+
+    case 'timestamps':
+      if (msg.payload) showWords(msg.payload);
+      break;
+
+    case 'error':
+      log(`Erro [${msg.source}]: ${msg.message}`, 'err');
+      setStatus('connected', 'Pronto');
+      if (agentMsgEl) agentMsgEl.querySelector('.msg-bubble').classList.remove('cursor');
+      isSpeaking = false;
+      updateMicButton();
+      break;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Envio de texto
+// ═══════════════════════════════════════════════════════════════════════════════
+function sendText() {
+  const input = document.getElementById('textInput');
+  const text  = input.value.trim();
+  if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({ type: 'text_message', text }));
+  input.value = '';
+}
+document.getElementById('textInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendText(); }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Silero VAD (vad-web)
+// ═══════════════════════════════════════════════════════════════════════════════
+let micVad       = null;
+let vadFrameCount= 0;
+
+function updateVadUI(prob, speaking) {
+  const pct = Math.round(prob * 100);
+  document.getElementById('vadProbBar').style.width  = `${pct}%`;
+  document.getElementById('vadProbBar').style.background = speaking ? 'var(--accent)' : 'var(--accent2)';
+  document.getElementById('vadProbText').textContent  = `${pct}%`;
+  document.getElementById('vadState').textContent     = speaking ? '🔴 voz detectada' : '⬜ silêncio';
+  document.getElementById('vadState').style.color     = speaking ? 'var(--accent)' : 'var(--muted)';
+  document.getElementById('vadFrames').textContent    = `${++vadFrameCount} frames`;
+}
+
+async function initMicVAD() {
+  if (micVad) return;
+  try {
+    log('Carregando modelo Silero VAD...', 'info');
+    micVad = await vad.MicVAD.new({
+      // Aponta para nossos arquivos locais
+      baseAssetPath:   '/',
+      onnxWASMBasePath:'/',
+
+      // Parâmetros de sensibilidade
+      positiveSpeechThreshold: 0.5,  // prob mínima para detectar voz
+      negativeSpeechThreshold: 0.35, // prob mínima para manter voz
+      redemptionFrames:        8,    // frames de silêncio antes de cortar
+      minSpeechFrames:         3,    // frames mínimos para considerar fala
+
+      onFrameProcessed: (probs) => {
+        // Atualiza UI a cada frame (30ms)
+        updateVadUI(probs.isSpeech, probs.isSpeech > 0.5);
+        updateVadBars(probs.isSpeech);
+      },
+
+      onSpeechStart: () => {
+        log('VAD: início de fala detectado', 'ok');
+        // Se agente está falando, já sinaliza barge-in imediatamente
+        if (isSpeaking) {
+          log('VAD: barge-in detectado — interrompendo agente', 'warn');
+          ws?.send(JSON.stringify({ type: 'barge_in' }));
+          isSpeaking = false;
+          updateMicButton();
+        } else {
+          setStatus('listening', 'Ouvindo...');
+          ws?.send(JSON.stringify({ type: 'vad_speech_start' }));
+        }
+      },
+
+      onSpeechEnd: (audio) => {
+        // Se agente estava falando quando a fala começou, descarta — já foi barge-in
+        // isSpeaking já foi resetado para false no onSpeechStart acima
+        // Mas checamos de novo por segurança
+        if (isSpeaking) {
+          log('VAD: fim de fala ignorado (eco do agente)', 'warn');
+          isSpeaking = false;
+          return;
+        }
+        log(`VAD: fim de fala (${(audio.length/16000).toFixed(2)}s de áudio)`, 'ok');
+        const pcm = new Int16Array(audio.length);
+        for (let i = 0; i < audio.length; i++) {
+          const s = Math.max(-1, Math.min(1, audio[i]));
+          pcm[i] = s < 0 ? s * 32768 : s * 32767;
+        }
+        const bytes = new Uint8Array(pcm.buffer);
+        let bin = '';
+        for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+        ws?.send(JSON.stringify({ type: 'vad_audio_complete', data: btoa(bin), durationMs: Math.round(audio.length / 16) }));
+        setStatus('connected', 'Processando...');
+      },
+
+      onVADMisfire: () => {
+        log('VAD: falso positivo ignorado', 'warn');
+      },
+    });
+
+    document.getElementById('vadVersion').textContent = 'Silero v5 ✓';
+    log('Silero VAD pronto', 'ok');
+  } catch(e) {
+    log(`Erro ao carregar VAD: ${e.message}`, 'err');
+    document.getElementById('vadVersion').textContent = 'erro';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Microfone — agora usa MicVAD em vez de ScriptProcessor
+// ═══════════════════════════════════════════════════════════════════════════════
+function updateMicButton() {
+  const btn = document.getElementById('btnMic');
+  if (isSpeaking && isListening) {
+    btn.classList.add('barge'); btn.classList.remove('active');
+    btn.textContent = '✋'; btn.title = 'Interromper agente';
+  } else if (isListening) {
+    btn.classList.add('active'); btn.classList.remove('barge');
+    btn.textContent = '⏹'; btn.title = 'Parar microfone';
+  } else {
+    btn.classList.remove('active', 'barge');
+    btn.textContent = '🎤'; btn.title = 'Falar';
+  }
+}
+
+async function toggleMic() {
+  if (isSpeaking && isListening) {
+    ws?.send(JSON.stringify({ type: 'barge_in' }));
+    isSpeaking = false; updateMicButton();
+    log('Interrompendo agente...', 'warn');
+    return;
+  }
+  if (isListening) stopMic();
+  else             await startMic();
+}
+
+async function startMic() {
+  try {
+    initPlayCtx();
+    if (playCtx.state === 'suspended') await playCtx.resume();
+
+    // Inicializa VAD (carrega modelo ONNX na primeira vez ~1s)
+    await initMicVAD();
+
+    await micVad.start();
+    isListening = true;
+    vadFrameCount = 0;
+    ws?.send(JSON.stringify({ type: 'start_listening' }));
+    setStatus('listening', 'Ouvindo...');
+    log('Microfone + VAD ativos', 'ok');
+    updateMicButton();
+  } catch(e) {
+    log(`Erro microfone: ${e.message}`, 'err');
+  }
+}
+
+function stopMic() {
+  isListening = false;
+  micVad?.pause();
+  stopVadVisual();
+  ws?.send(JSON.stringify({ type: 'stop_listening' }));
+  setStatus('connected', 'Conectado');
+  log('Microfone desativado', 'info');
+  updateMicButton();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// VAD Visual — barras de volume do microfone
+// ═══════════════════════════════════════════════════════════════════════════════
+const VAD_BARS    = 20;
+let vadAnimId     = null;
+let vadAnalyserRef= null;
+
+function initVadBars() {
+  const wrap = document.getElementById('vadBars');
+  wrap.innerHTML = '';
+  for (let i = 0; i < VAD_BARS; i++) {
+    const b = document.createElement('div');
+    b.className = 'vad-bar';
+    b.style.height = '4px';
+    wrap.appendChild(b);
+  }
+}
+
+function updateVadBars(speechProb) {
+  const bars = document.querySelectorAll('.vad-bar');
+  bars.forEach((bar, i) => {
+    const threshold = i / VAD_BARS;
+    const active    = speechProb > threshold;
+    const h         = active ? Math.max(4, speechProb * 48 * (1 - i / VAD_BARS * 0.3)) : 4;
+    bar.style.height     = `${h}px`;
+    bar.style.background = active
+      ? `hsl(${160 + i * 4}, 80%, ${50 + speechProb * 20}%)`
+      : 'var(--border2)';
+  });
+}
+
+function stopVadVisual() {
+  if (vadAnimId) { cancelAnimationFrame(vadAnimId); vadAnimId = null; }
+  document.querySelectorAll('.vad-bar').forEach(b => {
+    b.style.height     = '4px';
+    b.style.background = 'var(--border2)';
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Audio playback
+// ═══════════════════════════════════════════════════════════════════════════════
+function initPlayCtx() {
+  if (playCtx) return;
+  playCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+  analyser = playCtx.createAnalyser(); analyser.fftSize = 512;
+  gainNode = playCtx.createGain();
+  gainNode.connect(analyser);
+  analyser.connect(playCtx.destination);
+  nextPlayTime = playCtx.currentTime;
+}
+
+function appendAudio(bytes) {
+  const m = new Uint8Array(mp3Buffer.length + bytes.length);
+  m.set(mp3Buffer); m.set(bytes, mp3Buffer.length);
+  mp3Buffer = m;
+}
+
+async function flushAudio(force = false) {
+  if (mp3Buffer.length === 0) return;
+  if (!force && mp3Buffer.length < MIN_DECODE) return;
+  if (!playCtx) initPlayCtx();
+  const buf = mp3Buffer.buffer.slice(0);
+  mp3Buffer = new Uint8Array(0);
+  try {
+    const decoded = await playCtx.decodeAudioData(buf);
+    const src = playCtx.createBufferSource();
+    src.buffer = decoded; src.connect(gainNode);
+    const when = Math.max(nextPlayTime, playCtx.currentTime + 0.02);
+    src.start(when);
+    nextPlayTime = when + decoded.duration;
+    src.onended = () => {
+      if (nextPlayTime <= playCtx.currentTime + 0.1) {
+        isSpeaking = false;
+        setStatus('connected', 'Pronto');
+        updateMicButton();
+      }
+    };
+  } catch { mp3Buffer = new Uint8Array(buf); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Word chips
+// ═══════════════════════════════════════════════════════════════════════════════
+function showWords(ts) {
+  const wrap = document.getElementById('wordsWrap');
+  wrap.innerHTML = '';
+  const { words = [], start = [] } = ts;
+  words.forEach((w, i) => {
+    const c = document.createElement('span');
+    c.className = 'word-chip';
+    c.title = `${Number(start[i]).toFixed(2)}s`;
+    c.textContent = w;
+    wrap.appendChild(c);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Waveform playback visualizer
+// ═══════════════════════════════════════════════════════════════════════════════
+(function initWave() {
+  const canvas = document.getElementById('waveCanvas');
+  const ctx    = canvas.getContext('2d');
+  function resize() {
+    canvas.width  = canvas.offsetWidth  * devicePixelRatio;
+    canvas.height = canvas.offsetHeight * devicePixelRatio;
+    ctx.scale(devicePixelRatio, devicePixelRatio);
+  }
+  resize(); window.addEventListener('resize', resize);
+
+  (function draw() {
+    requestAnimationFrame(draw);
+    const W = canvas.offsetWidth, H = canvas.offsetHeight;
+    ctx.clearRect(0, 0, W, H);
+    if (!analyser) {
+      ctx.strokeStyle = 'rgba(0,212,255,0.08)'; ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let x = 0; x < W; x++) {
+        const y = H/2 + Math.sin(x*0.04 + Date.now()*0.0007)*2;
+        x===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+      }
+      ctx.stroke(); return;
+    }
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    analyser.getByteTimeDomainData(data);
+    ctx.strokeStyle = 'rgba(0,212,255,0.8)'; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    const sw = W / data.length; let x = 0;
+    for (let i = 0; i < data.length; i++) {
+      const y = H/2 + ((data[i]/128)-1)*H*0.42;
+      i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y); x+=sw;
+    }
+    ctx.stroke();
+  })();
+})();
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Init
+// ═══════════════════════════════════════════════════════════════════════════════
+initVadBars();
+loadHistory();
+connect();
+log('Pronto — histórico restaurado do localStorage', 'info');
+</script>
+</body>
+</html>

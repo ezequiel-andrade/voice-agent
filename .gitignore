@@ -1,0 +1,17 @@
+# Variáveis de ambiente — NUNCA commitar
+.env
+
+# Node modules
+node_modules/
+agent/node_modules/
+sip/node_modules/
+
+# Arquivos VAD/ONNX gerados pelo setup (grandes e regeneráveis)
+agent/public/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
