@@ -107,17 +107,77 @@ wss.on('connection', (clientWs, req) => {
 
   log.info('session', 'Nova conexão', { speaker, lang, model: llmModel });
 
-  // // ── Histórico LLM ─────────────────────────────────────────────────────────
-  // const messages = [{ role: 'system', content: 'Você é um assistente de voz prestativo e conciso. Responda de forma natural e breve.' }];
+  // ── Histórico LLM ─────────────────────────────────────────────────────────
+  // ── Structured Output Schema ──────────────────────────────────────────────
+  const RESPONSE_SCHEMA = {
+    name: 'VoiceAgentResponse',
+    strict: true,
+    schema: {
+      type: 'object',
+      properties: {
+        thinking: {
+          type: 'string',
+          description: 'Internal chain-of-thought — not spoken aloud. Analyze the user message before responding.',
+        },
+        intent: {
+          type: 'string',
+          enum: ['question', 'schedule', 'cancel', 'complaint', 'compliment', 'smalltalk', 'command', 'other'],
+          description: 'Primary intent detected in the user message.',
+        },
+        sentiment: {
+          type: 'string',
+          enum: ['positive', 'negative', 'neutral', 'frustrated', 'excited'],
+          description: 'Emotional tone of the user message.',
+        },
+        confidence: {
+          type: 'number',
+          description: 'Confidence score for intent detection (0.0 to 1.0).',
+        },
+        entities: {
+          type: 'object',
+          properties: {
+            names:   { type: 'array', items: { type: 'string' } },
+            dates:   { type: 'array', items: { type: 'string' } },
+            numbers: { type: 'array', items: { type: 'string' } },
+          },
+          required: ['names', 'dates', 'numbers'],
+          additionalProperties: false,
+        },
+        spoken_response: {
+          type: 'string',
+          description: 'The actual response spoken aloud by the voice agent. Natural, concise, conversational.',
+        },
+      },
+      required: ['thinking', 'intent', 'sentiment', 'confidence', 'entities', 'spoken_response'],
+      additionalProperties: false,
+    },
+  };
+
+  // ── System prompts por idioma ─────────────────────────────────────────────
+  const SYSTEM_PROMPTS = {
+    por: `Você é um assistente de voz prestativo e conciso.
+Sempre responda usando o JSON schema fornecido.
+- "thinking": raciocínio interno, nunca falado em voz alta.
+- "spoken_response": resposta natural, breve e conversacional para ser sintetizada em voz.`,
+    eng: `You are a helpful and concise voice assistant.
+Always respond using the provided JSON schema.
+- "thinking": internal reasoning, never spoken aloud.
+- "spoken_response": natural, brief, conversational reply to be synthesized as speech.`,
+    spa: `Eres un asistente de voz útil y conciso.
+Responde siempre usando el esquema JSON proporcionado.
+- "thinking": razonamiento interno, nunca hablado en voz alta.
+- "spoken_response": respuesta natural y breve para ser sintetizada como voz.`,
+    fra: `Tu es un assistant vocal utile et concis.
+Réponds toujours en utilisant le schéma JSON fourni.
+- "thinking": raisonnement interne, jamais prononcé à voix haute.
+- "spoken_response": réponse naturelle et brève à synthétiser en voix.`,
+    ger: `Du bist ein hilfreicher und präziser Sprachassistent.
+Antworte immer mit dem bereitgestellten JSON-Schema.
+- "thinking": internes Denken, niemals laut gesprochen.
+- "spoken_response": natürliche, kurze Antwort für die Sprachsynthese.`,
+  };
 
   // ── Histórico LLM ─────────────────────────────────────────────────────────
-  const SYSTEM_PROMPTS = {
-    por: 'Você é um assistente de voz prestativo e conciso. Responda de forma natural e breve.',
-    eng: 'You are a helpful and concise voice assistant. Respond naturally and briefly.',
-    spa: 'Eres un asistente de voz útil y conciso. Responde de forma natural y breve.',
-    fra: 'Tu es un assistant vocal utile et concis. Réponds naturellement et brièvement.',
-    ger: 'Du bist ein hilfreicher und präziser Sprachassistent. Antworte natürlich und kurz.',
-  };
   const messages = [{ role: 'system', content: SYSTEM_PROMPTS[lang] || SYSTEM_PROMPTS['eng'] }];
 
   // ── Rate Limiter ──────────────────────────────────────────────────────────
@@ -360,7 +420,7 @@ wss.on('connection', (clientWs, req) => {
     const tracker = new LatencyTracker();
     tracker.mark('start');
 
-    // Reconecta Rime em paralelo com o LLM
+    // Reconecta Rime em paralelo
     if (rimeWs) rimeWs.close();
     rimeReady = false;
     rimeQueue.length = 0;
@@ -378,52 +438,71 @@ wss.on('connection', (clientWs, req) => {
 
     try {
       tracker.mark('llm_start');
-      const stream = await inception.chat.completions.create(
-        { model: llmModel, messages, stream: true, extra_body: { reasoning_effort: 'instant' } },
+
+      // Structured output — sem streaming (JSON precisa estar completo para parsear)
+      const completion = await inception.chat.completions.create(
+        {
+          model: llmModel,
+          messages,
+          stream: false,
+          extra_body: { reasoning_effort: 'instant' },
+          response_format: {
+            type: 'json_schema',
+            json_schema: RESPONSE_SCHEMA,
+          },
+        },
         { signal: currentAbortController.signal }
       );
-      tracker.mark('llm_first_token');
-
-      let fullResponse   = '';
-      let sentenceBuffer = '';
-      let firstToken     = true;
-
-      for await (const chunk of stream) {
-        if (currentAbortController?.signal.aborted) break;
-
-        const token = chunk.choices[0]?.delta?.content || '';
-        if (!token) continue;
-
-        if (firstToken) {
-          tracker.mark('llm_first_token');
-          tracker.measure('ttft', 'llm_start', 'llm_first_token');
-          firstToken = false;
-        }
-
-        fullResponse   += token;
-        sentenceBuffer += token;
-        send({ type: 'llm_token', token });
-
-        if (/[.!?,;:\n]/.test(sentenceBuffer)) {
-          rimeSend(sentenceBuffer);
-          sentenceBuffer = '';
-        }
-      }
-
-      if (sentenceBuffer.trim()) rimeSend(sentenceBuffer);
-      rimeFlush();
-      isSpeaking = true;
 
       tracker.mark('llm_done');
       tracker.measure('llm_total', 'llm_start', 'llm_done');
 
-      messages.push({ role: 'assistant', content: fullResponse });
-      send({ type: 'llm_done', fullText: fullResponse });
+      // Parseia o JSON estruturado
+      const raw      = completion.choices[0]?.message?.content || '{}';
+      const parsed   = JSON.parse(raw);
+      const spoken   = parsed.spoken_response || '';
+      const intent   = parsed.intent   || 'other';
+      const sentiment= parsed.sentiment || 'neutral';
+      const entities = parsed.entities || { names: [], dates: [], numbers: [] };
+      const thinking = parsed.thinking || '';
 
       log.info('llm', 'Concluído', {
-        chars: fullResponse.length,
+        intent,
+        sentiment,
+        confidence: parsed.confidence,
+        entities,
+        chars: spoken.length,
         latency: tracker.report(),
       });
+
+      // Envia tokens simulados ao browser (para exibir no chat)
+      // Divide em palavras para simular streaming visual
+      const words = spoken.split(' ');
+      for (const word of words) {
+        if (currentAbortController?.signal.aborted) break;
+        send({ type: 'llm_token', token: word + ' ' });
+      }
+
+      // Envia metadados estruturados ao frontend
+      send({
+        type: 'llm_structured',
+        intent,
+        sentiment,
+        confidence: parsed.confidence,
+        entities,
+        thinking,
+      });
+
+      // Envia resposta falada ao Rime TTS
+      if (spoken.trim()) {
+        rimeSend(spoken);
+        rimeFlush();
+        isSpeaking = true;
+      }
+
+      // Salva no histórico apenas a resposta falada (não o JSON completo)
+      messages.push({ role: 'assistant', content: spoken });
+      send({ type: 'llm_done', fullText: spoken });
 
     } catch (e) {
       if (e.name === 'AbortError') {

@@ -317,6 +317,21 @@ footer {
       </div>
     </div>
 
+    <!-- Structured Output -->
+    <div class="metrics-section">
+      <div class="section-label">Structured Output</div>
+      <div class="metric-grid">
+        <div class="metric-cell"><div class="mlabel">Intent</div><div class="mval" id="sIntent">—</div></div>
+        <div class="metric-cell"><div class="mlabel">Sentiment</div><div class="mval" id="sSentiment">—</div></div>
+        <div class="metric-cell"><div class="mlabel">Confidence</div><div class="mval" id="sConfidence">—</div></div>
+        <div class="metric-cell"><div class="mlabel">Entities</div><div class="mval" id="sEntities">—</div></div>
+      </div>
+      <div style="margin-top:8px;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:3px;">
+        <div style="font-size:9px;letter-spacing:0.12em;text-transform:uppercase;color:var(--muted);margin-bottom:4px;">Thinking</div>
+        <div id="sThinking" style="font-size:10px;color:var(--muted);font-style:italic;line-height:1.5;max-height:60px;overflow-y:auto;">—</div>
+      </div>
+    </div>
+
     <!-- Log -->
     <div class="log-section">
       <div class="section-label">Log</div>
@@ -557,6 +572,28 @@ async function handleMsg(msg) {
         document.getElementById('messages').scrollTop = 999999;
       }
       if (llmStart) { setLatency('llm', Date.now() - llmStart); llmStart = null; }
+      break;
+
+    case 'llm_structured':
+      // Cores por sentimento
+      const sentimentColor = {
+        positive: 'var(--accent2)', negative: 'var(--red)',
+        neutral: 'var(--text)', frustrated: 'var(--warn)', excited: 'var(--accent)',
+      };
+      const intentIcon = {
+        question: '❓', schedule: '📅', cancel: '❌', complaint: '😤',
+        compliment: '😊', smalltalk: '💬', command: '⚡', other: '•',
+      };
+      document.getElementById('sIntent').textContent      = `${intentIcon[msg.intent] || '•'} ${msg.intent}`;
+      document.getElementById('sSentiment').textContent   = msg.sentiment;
+      document.getElementById('sSentiment').style.color   = sentimentColor[msg.sentiment] || 'var(--text)';
+      document.getElementById('sConfidence').textContent  = `${Math.round((msg.confidence || 0) * 100)}%`;
+      document.getElementById('sThinking').textContent    = msg.thinking || '—';
+      // Entidades
+      const e = msg.entities || {};
+      const all = [...(e.names||[]), ...(e.dates||[]), ...(e.numbers||[])];
+      document.getElementById('sEntities').textContent = all.length ? all.join(', ') : '—';
+      log(`Structured → intent: ${msg.intent} | sentiment: ${msg.sentiment} | confidence: ${Math.round((msg.confidence||0)*100)}%`, 'info');
       break;
 
     case 'llm_done':
